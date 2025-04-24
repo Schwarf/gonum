@@ -68,3 +68,61 @@ type planarityState struct {
 	stackBottom     map[graph.Edge]conflictPair // bottom-of-stack marker per edge
 	dfsGraph        *simple.DirectedGraph       // DFS-oriented graph structure
 }
+
+func checkPlanarity(g graph.Undirected) bool {
+
+	// Count nodes and edges
+	nodeCount := g.Nodes().Len()
+	total := 0
+	nodes := g.Nodes()
+	for nodes.Next() {
+		u := nodes.Node()
+		to := g.From(u.ID())
+		for to.Next() {
+			total++
+		}
+	}
+	edgeCount := total / 2
+	// Euler criterion: |E| > 3|V| - 6 for |V| > 2 implies non-planar
+	if nodeCount > 2 && edgeCount > 3*nodeCount-6 {
+		return false
+	}
+	state := newPlanarityState(g, nodeCount)
+	// Prepare heights with sentinel
+	for i := range state.heights {
+		state.heights[i] = noneHeight
+	}
+
+	// DFS orientation from unvisited nodes
+	nodes = g.Nodes()
+	for nodes.Next() {
+		u := nodes.Node()
+		index := int(u.ID())
+		if state.heights[index] == noneHeight {
+			state.heights[index] = 0
+			state.rootIndices = append(state.rootIndices, index)
+			state.dfsOrientation(index)
+		}
+	}
+	state.sortAdjacencyListByNestingDepth()
+	// Test each DFS rootIndex for conflicts
+	for _, rootIndex := range state.rootIndices {
+		if !state.dfsTesting(rootIndex) {
+			return false
+		}
+	}
+	return true
+}
+
+func (state *planarityState) dfsOrientation(start int) {
+	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+}
+
+func (state *planarityState) dfsTesting(rootIndex int) bool {
+	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+	return false
+}
+
+func (state *planarityState) sortAdjacencyListByNestingDepth() {
+	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+}
