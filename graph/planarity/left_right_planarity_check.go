@@ -49,6 +49,7 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 		stack:           make([]conflictPair, 0, nodeCount),
 		stackBottom:     make(map[graph.Edge]conflictPair, nodeCount),
 		dfsGraph:        simple.NewDirectedGraph(),
+		sortedNeighbors: make(map[int64][]int64, nodeCount),
 	}
 }
 
@@ -67,6 +68,7 @@ type planarityState struct {
 	stack           []conflictPair              // stack of conflict pairs
 	stackBottom     map[graph.Edge]conflictPair // bottom-of-stack marker per edge
 	dfsGraph        *simple.DirectedGraph       // DFS-oriented graph structure
+	sortedNeighbors map[int64][]int64           // sortedNeighbors holds adjacency lists of dfsGraph ordered by nesting depth
 }
 
 func checkPlanarity(g graph.Undirected) bool {
@@ -115,14 +117,14 @@ func checkPlanarity(g graph.Undirected) bool {
 }
 
 func (state *planarityState) dfsOrientation(start int) {
-	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+
 }
 
 func (state *planarityState) dfsTesting(rootIndex int) bool {
-	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+
 	return false
 }
 
 func (state *planarityState) sortAdjacencyListByNestingDepth() {
-	// TODO: implement DFS orientation; set heights, parentEdges, dfsGraph.
+
 }
