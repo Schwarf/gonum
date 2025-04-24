@@ -38,19 +38,19 @@ func (c *conflictPair) swap() {
 func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 
 	return &planarityState{
-		g:               g,
-		heights:         make([]int64, nodeCount),
-		lowestPoint:     make(map[graph.Edge]int64, nodeCount),
-		secondLowest:    make(map[graph.Edge]int64, nodeCount),
-		ref:             make(map[graph.Edge]graph.Edge, nodeCount),
-		rootIndices:     make([]int64, 0, nodeCount),
-		lowestPointEdge: make(map[graph.Edge]graph.Edge, nodeCount),
-		nestingDepth:    make(map[graph.Edge]int, nodeCount),
-		parentEdges:     make(map[int64]graph.Edge, nodeCount),
-		stack:           make([]conflictPair, 0, nodeCount),
-		stackBottom:     make(map[graph.Edge]conflictPair, nodeCount),
-		dfsGraph:        simple.NewDirectedGraph(),
-		sortedNeighbors: make(map[int64][]int64, nodeCount),
+		g:                 g,
+		heights:           make([]int64, nodeCount),
+		lowestPoint:       make(map[graph.Edge]int64, nodeCount),
+		secondLowestPoint: make(map[graph.Edge]int64, nodeCount),
+		ref:               make(map[graph.Edge]graph.Edge, nodeCount),
+		rootIndices:       make([]int64, 0, nodeCount),
+		lowestPointEdge:   make(map[graph.Edge]graph.Edge, nodeCount),
+		nestingDepth:      make(map[graph.Edge]int64, nodeCount),
+		parentEdges:       make(map[int64]graph.Edge, nodeCount),
+		stack:             make([]conflictPair, 0, nodeCount),
+		stackBottom:       make(map[graph.Edge]conflictPair, nodeCount),
+		dfsGraph:          simple.NewDirectedGraph(),
+		sortedNeighbors:   make(map[int64][]int64, nodeCount),
 	}
 }
 
@@ -58,18 +58,18 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 type planarityState struct {
 	g graph.Undirected
 	// runtime state
-	heights         []int64                     // DFS heights per node
-	lowestPoint     map[graph.Edge]int64        // lowest back-edge endpoint per edge
-	secondLowest    map[graph.Edge]int64        // second-lowest back-edge endpoint per edge
-	ref             map[graph.Edge]graph.Edge   // reference edge for conflict pairs
-	rootIndices     []int64                     // DFS tree rootIndices
-	lowestPointEdge map[graph.Edge]graph.Edge   // edge giving lowest low-point
-	nestingDepth    map[graph.Edge]int          // nesting depth per edge
-	parentEdges     map[int64]graph.Edge        // parent edge per node index
-	stack           []conflictPair              // stack of conflict pairs
-	stackBottom     map[graph.Edge]conflictPair // bottom-of-stack marker per edge
-	dfsGraph        *simple.DirectedGraph       // DFS-oriented graph structure
-	sortedNeighbors map[int64][]int64           // sortedNeighbors holds adjacency lists of dfsGraph ordered by nesting depth
+	heights           []int64                     // DFS heights per node
+	lowestPoint       map[graph.Edge]int64        // lowest back-edge endpoint per edge
+	secondLowestPoint map[graph.Edge]int64        // second-lowest back-edge endpoint per edge
+	ref               map[graph.Edge]graph.Edge   // reference edge for conflict pairs
+	rootIndices       []int64                     // DFS tree rootIndices
+	lowestPointEdge   map[graph.Edge]graph.Edge   // edge giving lowest low-point
+	nestingDepth      map[graph.Edge]int64        // nesting depth per edge
+	parentEdges       map[int64]graph.Edge        // parent edge per node index
+	stack             []conflictPair              // stack of conflict pairs
+	stackBottom       map[graph.Edge]conflictPair // bottom-of-stack marker per edge
+	dfsGraph          *simple.DirectedGraph       // DFS-oriented graph structure
+	sortedNeighbors   map[int64][]int64           // sortedNeighbors holds adjacency lists of dfsGraph ordered by nesting depth
 }
 
 func checkPlanarity(g graph.Undirected) bool {
@@ -117,6 +117,13 @@ func checkPlanarity(g graph.Undirected) bool {
 	return true
 }
 
+func minInt(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (state *planarityState) dfsOrientation(startNodeIndex int64, nodeCount int) {
 	dfsStack := make([]int64, 0, nodeCount)
 	dfsStack = append(dfsStack, startNodeIndex)
@@ -139,7 +146,7 @@ func (state *planarityState) dfsOrientation(startNodeIndex int64, nodeCount int)
 				dfsEdge := state.dfsGraph.NewEdge(currentNode, child)
 				state.dfsGraph.SetEdge(dfsEdge)
 				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
-				state.secondLowest[currentEdge] = state.heights[currentNodeIndex]
+				state.secondLowestPoint[currentEdge] = state.heights[currentNodeIndex]
 
 				if state.heights[childIndex] == noneHeight {
 					state.parentEdges[childIndex] = currentEdge
@@ -149,6 +156,21 @@ func (state *planarityState) dfsOrientation(startNodeIndex int64, nodeCount int)
 					break
 				}
 				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
+			}
+			state.nestingDepth[currentEdge] = 2 * state.lowestPoint[currentEdge]
+			if state.secondLowestPoint[currentEdge] < state.heights[currentNodeIndex] {
+				state.nestingDepth[currentEdge] += 1
+			}
+
+			if parentEdge != nil {
+				if state.lowestPoint[currentEdge] < state.lowestPoint[parentEdge] {
+					state.secondLowestPoint[parentEdge] = minInt(state.lowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
+					state.lowestPoint[parentEdge] = state.lowestPoint[currentEdge]
+				} else if state.lowestPoint[currentEdge] > state.lowestPoint[parentEdge] {
+					state.secondLowestPoint[parentEdge] = minInt(state.secondLowestPoint[parentEdge], state.lowestPoint[currentEdge])
+				} else {
+					state.secondLowestPoint[parentEdge] = minInt(state.secondLowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
+				}
 			}
 		}
 		if len(dfsStack) == 0 {
