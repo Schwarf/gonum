@@ -3,6 +3,7 @@ package planarity
 import (
 	"gonum.org/v1/gonum/graph"
 	"gonum.org/v1/gonum/graph/simple"
+	"sort"
 )
 
 const (
@@ -75,16 +76,17 @@ func checkPlanarity(g graph.Undirected) bool {
 
 	// Count nodes and edges
 	nodeCount := g.Nodes().Len()
-	total := 0
+	totalEdges := 0
 	nodes := g.Nodes()
 	for nodes.Next() {
 		u := nodes.Node()
 		to := g.From(u.ID())
 		for to.Next() {
-			total++
+			totalEdges++
 		}
 	}
-	edgeCount := total / 2
+	// each dge has been counted twice
+	edgeCount := totalEdges / 2
 	// Euler criterion: |E| > 3|V| - 6 for |V| > 2 implies non-planar
 	if nodeCount > 2 && edgeCount > 3*nodeCount-6 {
 		return false
@@ -126,5 +128,27 @@ func (state *planarityState) dfsTesting(rootIndex int) bool {
 }
 
 func (state *planarityState) sortAdjacencyListByNestingDepth() {
-
+	nodes := state.dfsGraph.Nodes()
+	for nodes.Next() {
+		currentNode := nodes.Node().ID()
+		// collect neighbor IDs
+		from := state.dfsGraph.From(currentNode)
+		var children []int64
+		for from.Next() {
+			children = append(children, from.Node().ID())
+		}
+		// sort by nestingDepth map
+		sort.Slice(children, func(index1, index2 int) bool {
+			edge1 := state.dfsGraph.Edge(currentNode, children[index1])
+			edge2 := state.dfsGraph.Edge(currentNode, children[index2])
+			depth1, ok1 := state.nestingDepth[edge1]
+			depth2, ok2 := state.nestingDepth[edge2]
+			if ok1 && ok2 {
+				return depth1 < depth2
+			}
+			return false
+		})
+		// store sorted list
+		state.sortedNeighbors[currentNode] = children
+	}
 }
