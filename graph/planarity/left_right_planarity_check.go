@@ -39,14 +39,14 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 
 	return &planarityState{
 		g:               g,
-		heights:         make([]int, nodeCount),
-		lowestPoint:     make(map[graph.Edge]int, nodeCount),
-		secondLowest:    make(map[graph.Edge]int, nodeCount),
+		heights:         make([]int64, nodeCount),
+		lowestPoint:     make(map[graph.Edge]int64, nodeCount),
+		secondLowest:    make(map[graph.Edge]int64, nodeCount),
 		ref:             make(map[graph.Edge]graph.Edge, nodeCount),
 		rootIndices:     make([]int64, 0, nodeCount),
 		lowestPointEdge: make(map[graph.Edge]graph.Edge, nodeCount),
 		nestingDepth:    make(map[graph.Edge]int, nodeCount),
-		parentEdges:     make(map[int]graph.Edge, nodeCount),
+		parentEdges:     make(map[int64]graph.Edge, nodeCount),
 		stack:           make([]conflictPair, 0, nodeCount),
 		stackBottom:     make(map[graph.Edge]conflictPair, nodeCount),
 		dfsGraph:        simple.NewDirectedGraph(),
@@ -58,9 +58,9 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 type planarityState struct {
 	g graph.Undirected
 	// runtime state
-	heights         []int                       // DFS heights per node
-	lowestPoint     map[graph.Edge]int          // lowest back-edge endpoint per edge
-	secondLowest    map[graph.Edge]int          // second-lowest back-edge endpoint per edge
+	heights         []int64                     // DFS heights per node
+	lowestPoint     map[graph.Edge]int64        // lowest back-edge endpoint per edge
+	secondLowest    map[graph.Edge]int64        // second-lowest back-edge endpoint per edge
 	ref             map[graph.Edge]graph.Edge   // reference edge for conflict pairs
 	rootIndices     []int64                     // DFS tree rootIndices
 	lowestPointEdge map[graph.Edge]graph.Edge   // edge giving lowest low-point
@@ -129,7 +129,27 @@ func (state *planarityState) dfsOrientation(startNodeIndex int64, nodeCount int)
 		for childIterator := state.dfsGraph.From(currentNodeIndex); childIterator.Next(); {
 			childIndex := childIterator.Node().ID()
 			currentEdge := state.g.Edge(currentNodeIndex, childIndex)
-			
+			if _, seen := preprocessedEdges[currentEdge]; !seen {
+				if state.dfsGraph.HasEdgeFromTo(currentNodeIndex, childIndex) ||
+					state.dfsGraph.HasEdgeFromTo(childIndex, currentNodeIndex) {
+					continue
+				}
+				currentNode := state.dfsGraph.Node(currentNodeIndex)
+				child := state.dfsGraph.Node(childIndex)
+				dfsEdge := state.dfsGraph.NewEdge(currentNode, child)
+				state.dfsGraph.SetEdge(dfsEdge)
+				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
+				state.secondLowest[currentEdge] = state.heights[currentNodeIndex]
+
+				if state.heights[childIndex] == noneHeight {
+					state.parentEdges[childIndex] = currentEdge
+					state.heights[childIndex] = state.heights[currentNodeIndex] + 1
+					dfsStack = append(dfsStack, currentNodeIndex, childIndex)
+					preprocessedEdges[currentEdge] = struct{}{}
+					break
+				}
+				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
+			}
 		}
 		if len(dfsStack) == 0 {
 			break
