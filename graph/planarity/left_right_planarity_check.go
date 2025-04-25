@@ -7,10 +7,13 @@ import (
 )
 
 type node = int64
+type count = uint64
 
 const (
 	noneHeight = -1
 )
+
+var NoneConflictPair = conflictPair{}
 
 func IsPlanar(g graph.Undirected) bool {
 	return checkPlanarity(g)
@@ -41,13 +44,13 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 
 	return &planarityState{
 		g:                 g,
-		heights:           make([]node, nodeCount),
-		lowestPoint:       make(map[graph.Edge]node, nodeCount),
-		secondLowestPoint: make(map[graph.Edge]node, nodeCount),
+		heights:           make([]count, nodeCount),
+		lowestPoint:       make(map[graph.Edge]count, nodeCount),
+		secondLowestPoint: make(map[graph.Edge]count, nodeCount),
 		ref:               make(map[graph.Edge]graph.Edge, nodeCount),
 		rootNodes:         make([]node, 0, nodeCount),
 		lowestPointEdge:   make(map[graph.Edge]graph.Edge, nodeCount),
-		nestingDepth:      make(map[graph.Edge]node, nodeCount),
+		nestingDepth:      make(map[graph.Edge]count, nodeCount),
 		parentEdges:       make(map[node]graph.Edge, nodeCount),
 		stack:             make([]conflictPair, 0, nodeCount),
 		stackBottom:       make(map[graph.Edge]conflictPair, nodeCount),
@@ -60,13 +63,13 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 type planarityState struct {
 	g graph.Undirected
 	// runtime state
-	heights           []node                      // DFS heights per node
-	lowestPoint       map[graph.Edge]node         // lowest back-edge endpoint per edge
-	secondLowestPoint map[graph.Edge]node         // second-lowest back-edge endpoint per edge
+	heights           []count                     // DFS heights per node
+	lowestPoint       map[graph.Edge]count        // lowest back-edge endpoint per edge
+	secondLowestPoint map[graph.Edge]count        // second-lowest back-edge endpoint per edge
 	ref               map[graph.Edge]graph.Edge   // reference edge for conflict pairs
 	rootNodes         []node                      // DFS tree rootNodes
 	lowestPointEdge   map[graph.Edge]graph.Edge   // edge giving lowest low-point
-	nestingDepth      map[graph.Edge]node         // nesting depth per edge
+	nestingDepth      map[graph.Edge]count        // nesting depth per edge
 	parentEdges       map[node]graph.Edge         // parent edge per node index
 	stack             []conflictPair              // stack of conflict pairs
 	stackBottom       map[graph.Edge]conflictPair // bottom-of-stack marker per edge
@@ -119,7 +122,7 @@ func checkPlanarity(g graph.Undirected) bool {
 	return true
 }
 
-func minInt(a, b node) node {
+func minCount(a, b count) count {
 	if a < b {
 		return a
 	}
@@ -132,46 +135,46 @@ func (state *planarityState) dfsOrientation(startNode node, nodeCount int) {
 	preprocessedEdges := make(map[graph.Edge]struct{})
 	for {
 		n := len(dfsStack)
-		currentNodeIndex := dfsStack[len(dfsStack)-1]
+		currentNode := dfsStack[len(dfsStack)-1]
 		dfsStack = dfsStack[:n-1]
-		parentEdge := state.parentEdges[currentNodeIndex]
-		for childIterator := state.dfsGraph.From(currentNodeIndex); childIterator.Next(); {
-			childIndex := childIterator.Node().ID()
-			currentEdge := state.g.Edge(currentNodeIndex, childIndex)
+		parentEdge := state.parentEdges[currentNode]
+		for neighborIterator := state.dfsGraph.From(currentNode); neighborIterator.Next(); {
+			neighbor := neighborIterator.Node().ID()
+			currentEdge := state.g.Edge(currentNode, neighbor)
 			if _, seen := preprocessedEdges[currentEdge]; !seen {
-				if state.dfsGraph.HasEdgeFromTo(currentNodeIndex, childIndex) ||
-					state.dfsGraph.HasEdgeFromTo(childIndex, currentNodeIndex) {
+				if state.dfsGraph.HasEdgeFromTo(currentNode, neighbor) ||
+					state.dfsGraph.HasEdgeFromTo(neighbor, currentNode) {
 					continue
 				}
-				currentNode := state.dfsGraph.Node(currentNodeIndex)
-				child := state.dfsGraph.Node(childIndex)
-				dfsEdge := state.dfsGraph.NewEdge(currentNode, child)
+				currentNodeDFSGraph := state.dfsGraph.Node(currentNode)
+				neighborNodeDFSGraph := state.dfsGraph.Node(neighbor)
+				dfsEdge := state.dfsGraph.NewEdge(currentNodeDFSGraph, neighborNodeDFSGraph)
 				state.dfsGraph.SetEdge(dfsEdge)
-				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
-				state.secondLowestPoint[currentEdge] = state.heights[currentNodeIndex]
+				state.lowestPoint[currentEdge] = state.heights[currentNode]
+				state.secondLowestPoint[currentEdge] = state.heights[currentNode]
 
-				if state.heights[childIndex] == noneHeight {
-					state.parentEdges[childIndex] = currentEdge
-					state.heights[childIndex] = state.heights[currentNodeIndex] + 1
-					dfsStack = append(dfsStack, currentNodeIndex, childIndex)
+				if state.heights[neighbor] == noneHeight {
+					state.parentEdges[neighbor] = currentEdge
+					state.heights[neighbor] = state.heights[currentNode] + 1
+					dfsStack = append(dfsStack, currentNode, neighbor)
 					preprocessedEdges[currentEdge] = struct{}{}
 					break
 				}
-				state.lowestPoint[currentEdge] = state.heights[currentNodeIndex]
+				state.lowestPoint[currentEdge] = state.heights[currentNode]
 			}
 			state.nestingDepth[currentEdge] = 2 * state.lowestPoint[currentEdge]
-			if state.secondLowestPoint[currentEdge] < state.heights[currentNodeIndex] {
+			if state.secondLowestPoint[currentEdge] < state.heights[currentNode] {
 				state.nestingDepth[currentEdge] += 1
 			}
 
 			if parentEdge != nil {
 				if state.lowestPoint[currentEdge] < state.lowestPoint[parentEdge] {
-					state.secondLowestPoint[parentEdge] = minInt(state.lowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
+					state.secondLowestPoint[parentEdge] = minCount(state.lowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
 					state.lowestPoint[parentEdge] = state.lowestPoint[currentEdge]
 				} else if state.lowestPoint[currentEdge] > state.lowestPoint[parentEdge] {
-					state.secondLowestPoint[parentEdge] = minInt(state.secondLowestPoint[parentEdge], state.lowestPoint[currentEdge])
+					state.secondLowestPoint[parentEdge] = minCount(state.secondLowestPoint[parentEdge], state.lowestPoint[currentEdge])
 				} else {
-					state.secondLowestPoint[parentEdge] = minInt(state.secondLowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
+					state.secondLowestPoint[parentEdge] = minCount(state.secondLowestPoint[parentEdge], state.secondLowestPoint[currentEdge])
 				}
 			}
 		}
@@ -185,6 +188,70 @@ func (state *planarityState) dfsTesting(startNode node, nodeCount int) bool {
 	dfsStack := make([]node, 0, nodeCount)
 	dfsStack = append(dfsStack, startNode)
 	preprocessedEdges := make(map[graph.Edge]struct{})
+	neigborIndices := make(map[node]node, nodeCount)
+	processNeighborEdges := func(currentNode node) (bool, bool) {
+		callRemoveBackEdges := true
+		for {
+			neighborIndex := neigborIndices[currentNode]
+			neighbors := state.sortedNeighbors[currentNode]
+			if neighborIndex >= int64(len(neighbors)) {
+				return true, callRemoveBackEdges
+			}
+			neighbor := neighbors[neighborIndex]
+			neigborIndices[currentNode] = neighborIndex + 1
+
+			// Corresponding DFS-tree currentEdge (or candidate)
+			currentEdge := state.g.Edge(currentNode, neighbor)
+			if _, seen := preprocessedEdges[currentEdge]; !seen {
+				// Record stack bottom marker
+				if len(state.stack) == 0 {
+					state.stackBottom[currentEdge] = NoneConflictPair
+				} else {
+					state.stackBottom[currentEdge] = state.stack[len(state.stack)-1]
+				}
+				// If this is the tree currentEdge leading to neighbor
+				if parent, ok := state.parentEdges[neighbor]; ok && currentEdge == parent {
+					dfsStack = append(dfsStack, currentNode, neighbor)
+					preprocessedEdges[currentEdge] = struct{}{}
+					callRemoveBackEdges = false
+					return true, callRemoveBackEdges
+				}
+				// Otherwise start a new conflict pair
+				state.lowestPointEdge[currentEdge] = currentEdge
+				state.stack = append(state.stack, conflictPair{left: interval{}, right: interval{low: currentEdge, high: currentEdge}})
+			}
+
+			// Handle back-currentEdge constraints
+			if lp, ok := state.lowestPoint[currentEdge]; ok && lp < state.heights[currentNode] {
+				firsts := state.sortedNeighbors[currentNode]
+				var firstChild node
+				if len(firsts) > 0 {
+					firstChild = node(firsts[0])
+				}
+				if neighbor == firstChild {
+					parent := state.parentEdges[currentNode]
+					state.lowestPointEdge[parent] = state.lowestPointEdge[currentEdge]
+				} else if !state.applyConstraints(currentEdge, state.parentEdges[currentNode]) {
+					return false, callRemoveBackEdges
+				}
+			}
+		}
+	}
+
+	// Main DFS-processing loop
+	for len(dfsStack) > 0 {
+		current := dfsStack[len(dfsStack)-1]
+		dfsStack = dfsStack[:len(dfsStack)-1]
+		parent := state.parentEdges[current]
+		ok, callRemove := processNeighborEdges(current)
+		if !ok {
+			return false
+		}
+		if callRemove && parent != nil {
+			state.removeBackEdges(parent)
+		}
+	}
+	return true
 
 }
 
