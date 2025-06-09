@@ -352,5 +352,35 @@ func (state *planarityState) removeBackEdges(edge graph.Edge) {
 			state.ref[edge] = highestReturnEdgeRight
 		}
 	}
+}
 
+func (state *planarityState) applyConstraints(edge graph.Edge, parentEdge graph.Edge) bool {
+	tmpConflictPair := conflictPair{}
+	for {
+		currentConflictPair := state.stack[len(state.stack)-1]
+		state.stack = state.stack[:len(state.stack)-1]
+		if !currentConflictPair.left.isEmpty() {
+			currentConflictPair.swap()
+		}
+		if !currentConflictPair.left.isEmpty() {
+			return false
+		}
+		rightLowLowest := state.lowestPoint[currentConflictPair.right.low]
+		parentEdgeLowest := state.lowestPoint[parentEdge]
+		if rightLowLowest != 0 && parentEdgeLowest != 0 && rightLowLowest > parentEdgeLowest {
+			if tmpConflictPair.right.isEmpty() {
+				tmpConflictPair.right = currentConflictPair.right
+			} else {
+				state.ref[tmpConflictPair.right.low] = currentConflictPair.right.high
+			}
+
+			tmpConflictPair.right.low = currentConflictPair.right.low
+		} else {
+			state.ref[currentConflictPair.right.low] = state.lowestPointEdge[parentEdge]
+		}
+		if len(state.stack) == 0 || state.stack[len(state.stack)-1] == state.stackBottom[edge] {
+			break
+		}
+
+	}
 }
