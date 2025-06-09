@@ -95,6 +95,20 @@ func wheelGraph(numNodes int64) graph.Undirected {
 	return g
 }
 
+// completeGraph returns the complete graph on numNodes vertices.
+func completeGraph(numNodes int64) graph.Undirected {
+	g := simple.NewUndirectedGraph()
+	for i := int64(0); i < numNodes; i++ {
+		g.AddNode(simple.Node(i))
+	}
+	for i := int64(0); i < numNodes; i++ {
+		for j := i + 1; j < numNodes; j++ {
+			g.SetEdge(g.NewEdge(simple.Node(i), simple.Node(j)))
+		}
+	}
+	return g
+}
+
 func TestPlanarEmptyGraph(t *testing.T) {
 	g := simple.NewUndirectedGraph()
 	if !IsPlanar(g) {
@@ -151,6 +165,24 @@ func TestPlanarWheelGraphs(t *testing.T) {
 		g := wheelGraph(n)
 		if !IsPlanar(g) {
 			t.Errorf("Wheel graph of size %d should be planar", n)
+		}
+	}
+}
+
+func TestPlanarCompleteGraphs(t *testing.T) {
+	for n := int64(2); n < 5; n++ {
+		g := completeGraph(n)
+		if !IsPlanar(g) {
+			t.Errorf("Complete graph K_%d should be planar", n)
+		}
+	}
+}
+
+func TestNonPlanarCompleteGraphs(t *testing.T) {
+	for n := int64(5); n <= maxNumberOfNodes; n++ {
+		g := completeGraph(n)
+		if IsPlanar(g) {
+			t.Errorf("Complete graph K_%d should be non-planar", n)
 		}
 	}
 }
