@@ -309,8 +309,47 @@ func (state *planarityState) removeBackEdges(edge graph.Edge) {
 	if len(state.stack) > 0 {
 		conflictPair := state.stack[len(state.stack)-1]
 		state.stack = state.stack[:len(state.stack)-1]
+		// TODO: Double check the second condition in loop
 		for conflictPair.left.high != nil && conflictPair.left.high.To().ID() == parentNode {
-			
+			// look up a replacement in the map
+			if mapped, ok := state.ref[conflictPair.left.high]; ok {
+				conflictPair.left.high = mapped
+			} else {
+				// no entry -> “noneEdge”
+				conflictPair.left.high = nil
+			}
+		}
+		if conflictPair.left.high == nil && conflictPair.left.low != nil {
+			// record the mapping
+			state.ref[conflictPair.left.low] = conflictPair.right.low
+			// reset low to “none”
+			conflictPair.left.low = nil
+		}
+		// TODO: Double check the second condition in loop
+		for conflictPair.right.high != nil && conflictPair.right.high.To().ID() == parentNode {
+			// look up a replacement in the map
+			if mapped, ok := state.ref[conflictPair.right.high]; ok {
+				conflictPair.right.high = mapped
+			} else {
+				// no entry -> “noneEdge”
+				conflictPair.right.high = nil
+			}
+		}
+		if conflictPair.right.high == nil && conflictPair.right.low != nil {
+			// record the mapping
+			state.ref[conflictPair.right.low] = conflictPair.left.low
+			// reset low to “none”
+			conflictPair.right.low = nil
+		}
+		state.stack = append(state.stack, conflictPair)
+	}
+	if len(state.stack) > 0 && state.lowestPoint[edge] < state.heights[parentNode] {
+		highestReturnEdgeLeft := state.stack[len(state.stack)-1].left.high
+		highestReturnEdgeRight := state.stack[len(state.stack)-1].right.high
+		if highestReturnEdgeLeft != nil && (highestReturnEdgeRight != nil || state.lowestPoint[highestReturnEdgeLeft] < state.lowestPoint[highestReturnEdgeRight]) {
+			state.ref[edge] = highestReturnEdgeLeft
+		} else {
+			state.ref[edge] = highestReturnEdgeRight
 		}
 	}
 
