@@ -13,8 +13,6 @@ const (
 	noneHeight = -1
 )
 
-var NoneConflictPair = conflictPair{}
-
 func IsPlanar(g graph.Undirected) bool {
 	return checkPlanarity(g)
 }
@@ -29,7 +27,9 @@ func (i interval) isEmpty() bool {
 	return i.low == nil && i.high == nil
 }
 
-// conflictPair holds two intervals (left and right) for the LR test.
+var NoneConflictPair = conflictPair{}
+
+// conflictPair holds two intervals (left and right) for the LR testate.
 type conflictPair struct {
 	left, right interval
 }
@@ -37,6 +37,24 @@ type conflictPair struct {
 // swap interchanges the left and right intervals.
 func (c *conflictPair) swap() {
 	c.left, c.right = c.right, c.left
+}
+
+func (state *planarityState) getLowestLowPoint(conflictPair conflictPair) uint64 {
+	// If the left interval is empty, use the right edge directly.
+	if conflictPair.left.isEmpty() {
+		return state.lowestPoint[conflictPair.right.low]
+	}
+	// If the right interval is empty, use the left edge directly.
+	if conflictPair.right.isEmpty() {
+		return state.lowestPoint[conflictPair.left.low]
+	}
+	// Otherwise take the min of the two.
+	leftVal := state.lowestPoint[conflictPair.left.low]
+	rightVal := state.lowestPoint[conflictPair.right.low]
+	if leftVal < rightVal {
+		return leftVal
+	}
+	return rightVal
 }
 
 // newPlanarityState constructs internal state for the algorithm.
@@ -59,7 +77,7 @@ func newPlanarityState(g graph.Undirected, nodeCount int) *planarityState {
 	}
 }
 
-// planarityState holds internal data for the Left-Right Planarity Test.
+// planarityState holds internal data for the Left-Right Planarity Testate.
 type planarityState struct {
 	g graph.Undirected
 	// runtime state
@@ -184,21 +202,21 @@ func (state *planarityState) dfsOrientation(startNode node, nodeCount int) {
 	}
 }
 
-func (state *planarityState) dfsTesting(startNode node, nodeCount int) bool {
-	dfsStack := make([]node, 0, nodeCount)
+func (state *planarityState) dfsTesting(startNode node) bool {
+	dfsStack := make([]node, 0)
 	dfsStack = append(dfsStack, startNode)
 	preprocessedEdges := make(map[graph.Edge]struct{})
-	neigborIndices := make(map[node]node, nodeCount)
+	neighborIndices := make(map[node]node)
 	processNeighborEdges := func(currentNode node) (bool, bool) {
 		callRemoveBackEdges := true
 		for {
-			neighborIndex := neigborIndices[currentNode]
+			neighborIndex := neighborIndices[currentNode]
 			neighbors := state.sortedNeighbors[currentNode]
 			if neighborIndex >= int64(len(neighbors)) {
 				return true, callRemoveBackEdges
 			}
 			neighbor := neighbors[neighborIndex]
-			neigborIndices[currentNode] = neighborIndex + 1
+			neighborIndices[currentNode] = neighborIndex + 1
 
 			// Corresponding DFS-tree currentEdge (or candidate)
 			currentEdge := state.g.Edge(currentNode, neighbor)
@@ -279,4 +297,21 @@ func (state *planarityState) sortAdjacencyListByNestingDepth() {
 		// store sorted list
 		state.sortedNeighbors[currentNode] = children
 	}
+}
+
+func (state *planarityState) removeBackEdges(edge graph.Edge) {
+	parentNode := edge.From().ID()
+	for len(state.stack) > 0 &&
+		state.getLowestLowPoint(state.stack[len(state.stack)-1]) == state.heights[parentNode] {
+		// pop the top element
+		state.stack = state.stack[:len(state.stack)-1]
+	}
+	if len(state.stack) > 0 {
+		conflictPair := state.stack[len(state.stack)-1]
+		state.stack = state.stack[:len(state.stack)-1]
+		for conflictPair.left.high != nil && conflictPair.left.high.To().ID() == parentNode {
+			
+		}
+	}
+
 }
