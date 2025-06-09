@@ -39,6 +39,13 @@ func (c *conflictPair) swap() {
 	c.left, c.right = c.right, c.left
 }
 
+func (state *planarityState) conflicting(interval interval, edge graph.Edge) bool {
+	highLowest := state.lowestPoint[interval.high]
+	edgeLowest := state.lowestPoint[edge]
+	// TODO check if comparison with 0 for lowestPpint values make sense
+	return !interval.isEmpty() && highLowest != 0 && edgeLowest != 0 && highLowest > edgeLowest
+}
+
 func (state *planarityState) getLowestLowPoint(conflictPair conflictPair) uint64 {
 	// If the left interval is empty, use the right edge directly.
 	if conflictPair.left.isEmpty() {
@@ -383,4 +390,29 @@ func (state *planarityState) applyConstraints(edge graph.Edge, parentEdge graph.
 		}
 
 	}
+	for len(state.stack) > 0 && (state.conflicting(state.stack[len(state.stack)-1].left, edge) || state.conflicting(state.stack[len(state.stack)-1].right, edge)) {
+		currentConflictPair := state.stack[len(state.stack)-1]
+		state.stack = state.stack[:len(state.stack)-1]
+		if state.conflicting(currentConflictPair.right, edge) {
+			currentConflictPair.swap()
+		}
+		if state.conflicting(currentConflictPair.right, edge) {
+			return false
+		}
+		state.ref[tmpConflictPair.right.low] = currentConflictPair.right.high
+		if currentConflictPair.right.low != nil {
+			tmpConflictPair.right = currentConflictPair.right
+		}
+
+		if tmpConflictPair.left.isEmpty() {
+			tmpConflictPair.left = currentConflictPair.right
+		} else {
+			state.ref[tmpConflictPair.left.low] = currentConflictPair.left.high
+		}
+		tmpConflictPair.left.low = currentConflictPair.left.low
+	}
+	if !tmpConflictPair.left.isEmpty() || !tmpConflictPair.right.isEmpty() {
+		state.stack = append(state.stack, tmpConflictPair)
+	}
+	return true
 }
