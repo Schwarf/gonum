@@ -109,6 +109,49 @@ func completeGraph(numNodes int64) graph.Undirected {
 	return g
 }
 
+// gridGraph returns a 2D grid with given rows and columns.
+func gridGraph(rows, cols int64) graph.Undirected {
+	total := rows * cols
+	g := simple.NewUndirectedGraph()
+	for i := int64(0); i < total; i++ {
+		g.AddNode(simple.Node(i))
+	}
+	for r := int64(0); r < rows; r++ {
+		for c := int64(0); c < cols; c++ {
+			id := r*cols + c
+			if c+1 < cols {
+				g.SetEdge(g.NewEdge(simple.Node(id), simple.Node(id+1)))
+			}
+			if r+1 < rows {
+				g.SetEdge(g.NewEdge(simple.Node(id), simple.Node(id+cols)))
+			}
+		}
+	}
+	return g
+}
+
+// petersenGraph returns the generalized Petersen graph P(n,k).
+func petersenGraph(n, k int64) graph.Undirected {
+	total := 2 * n
+	g := simple.NewUndirectedGraph()
+	for i := int64(0); i < total; i++ {
+		g.AddNode(simple.Node(i))
+	}
+	// outer cycle
+	for i := int64(0); i < n; i++ {
+		g.SetEdge(g.NewEdge(simple.Node(i), simple.Node((i+1)%n)))
+	}
+	// inner star
+	for i := int64(0); i < n; i++ {
+		g.SetEdge(g.NewEdge(simple.Node(n+i), simple.Node(n+(i+k)%n)))
+	}
+	// spokes
+	for i := int64(0); i < n; i++ {
+		g.SetEdge(g.NewEdge(simple.Node(i), simple.Node(n+i)))
+	}
+	return g
+}
+
 func TestPlanarEmptyGraph(t *testing.T) {
 	g := simple.NewUndirectedGraph()
 	if !IsPlanar(g) {
@@ -186,3 +229,46 @@ func TestNonPlanarCompleteGraphs(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanarPetersenGraphs(t *testing.T) {
+	for n := int64(3); n <= maxNumberOfNodes; n++ {
+		for k := int64(1); k <= n/2; k++ {
+			isPlanarPetersenGraph := k == 1 || (k == 2 && (n&1) == 0)
+			if isPlanarPetersenGraph {
+				g := petersenGraph(n, k)
+				if !IsPlanar(g) {
+					t.Errorf("Petersen graph P_%d_%d should be planar", n, k)
+				}
+			}
+		}
+	}
+}
+
+// TestNonPlanarPetersenGraphs checks generalized Petersen graphs P(n,k) for non-planarity.
+func TestNonPlanarPetersenGraphs(t *testing.T) {
+	for n := int64(3); n < maxNumberOfNodes; n++ {
+		for k := int64(1); k <= n/2; k++ {
+			// Non-planar when not (k==1 or (k==2 and n even))
+			if !(k == 1 || (k == 2 && n%2 == 0)) {
+				g := petersenGraph(n, k)
+				if IsPlanar(g) {
+					t.Errorf("Petersen graph P_%d_%d should be non-planar", n, k)
+				}
+			}
+		}
+	}
+}
+
+//func TestNonPlanarPetersenGraphs(t *testing.T) {
+//	for n := int64(3); n < maxNumberOfNodes; n++ {
+//		for k := int64(1); k <= n/2; k++ {
+//			isNonPlanarPetersenGraph := !(k == 1 || (k == 2 && (n&1) == 0))
+//			if isNonPlanarPetersenGraph {
+//				g := petersenGraph(n, k)
+//				if IsPlanar(g) {
+//					t.Errorf("Petersen graph P_%d_%d should be non-planar", n, k)
+//				}
+//			}
+//		}
+//	}
+//}
