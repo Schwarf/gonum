@@ -7,7 +7,7 @@ import (
 )
 
 type node = int64
-type count = uint64
+type count = int64
 
 const (
 	noneHeight = -1
@@ -46,7 +46,7 @@ func (state *planarityState) conflicting(interval interval, edge graph.Edge) boo
 	return !interval.isEmpty() && highLowest != 0 && edgeLowest != 0 && highLowest > edgeLowest
 }
 
-func (state *planarityState) getLowestLowPoint(conflictPair conflictPair) uint64 {
+func (state *planarityState) getLowestLowPoint(conflictPair conflictPair) int64 {
 	// If the left interval is empty, use the right edge directly.
 	if conflictPair.left.isEmpty() {
 		return state.lowestPoint[conflictPair.right.low]
