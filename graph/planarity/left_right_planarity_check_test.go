@@ -40,6 +40,18 @@ func cycleGraph(numNodes int64) graph.Undirected {
 	return g
 }
 
+// starGraph returns a star with center at node 0.
+func starGraph(numNodes int64) graph.Undirected {
+	g := simple.NewUndirectedGraph()
+	for i := int64(0); i < numNodes; i++ {
+		g.AddNode(simple.Node(i))
+	}
+	for i := int64(1); i < numNodes; i++ {
+		g.SetEdge(g.NewEdge(simple.Node(0), simple.Node(i)))
+	}
+	return g
+}
+
 func TestPlanarEmptyGraph(t *testing.T) {
 	g := simple.NewUndirectedGraph()
 	if !IsPlanar(g) {
@@ -69,6 +81,15 @@ func TestPlanarCycleGraphs(t *testing.T) {
 		g := cycleGraph(n)
 		if !IsPlanar(g) {
 			t.Errorf("Cycle graph of size %d should be planar", n)
+		}
+	}
+}
+
+func TestPlanarStarGraphs(t *testing.T) {
+	for n := int64(2); n <= maxNumberOfNodes; n++ {
+		g := starGraph(n)
+		if !IsPlanar(g) {
+			t.Errorf("Star graph of size %d should be planar", n)
 		}
 	}
 }
