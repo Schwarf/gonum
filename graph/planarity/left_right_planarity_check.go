@@ -10,7 +10,7 @@ type node = int64
 type count = int64
 
 const (
-	noneHeight = -1
+	noneHeight = 0
 )
 
 func IsPlanar(g graph.Undirected) bool {
@@ -122,18 +122,21 @@ func checkPlanarity(g graph.Undirected) bool {
 		return false
 	}
 	state := newPlanarityState(g, nodeCount)
-	// Prepare heights with sentinel
-	for i := range state.heights {
-		state.heights[i] = noneHeight
+
+	var ids []int64
+	for nodes.Next() {
+		ids = append(ids, nodes.Node().ID())
 	}
 
+	// 2) sort them
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i] < ids[j]
+	})
 	// DFS orientation from unvisited nodes
-	nodes = g.Nodes()
-	for nodes.Next() {
-		node := nodes.Node()
+	for _, id := range ids {
+		node := g.Node(id)
 		nodeIndex := node.ID()
 		if state.heights[nodeIndex] == noneHeight {
-			state.heights[nodeIndex] = 0
 			state.rootNodes = append(state.rootNodes, nodeIndex)
 			state.dfsOrientation(nodeIndex, nodeCount)
 		}
