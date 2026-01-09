@@ -72,13 +72,13 @@ func BenchmarkLi2Heatmap(b *testing.B) {
 			if i1 > nRe {
 				i1 = nRe
 			}
+			// ✅ add this
 			if i0 >= nRe || j0 >= nIm {
 				continue
 			}
 			if i1 <= i0 || j1 <= j0 {
 				continue
 			}
-
 			name := fmt.Sprintf("grid/re[%d:%d]_im[%d:%d]", i0, i1, j0, j1)
 			i0, i1, j0, j1 := i0, i1, j0, j1 // capture
 			b.Run(name, func(b *testing.B) {
