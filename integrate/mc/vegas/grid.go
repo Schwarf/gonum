@@ -96,32 +96,10 @@ func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 	return m
 }
 
-func (grid *Grid) UpdateMap() {
-	grid.smoothWeights()
-	for d := 0; d < grid.dim; d++ {
-		copy(grid.xEdgesLast[d], grid.xEdges[d])
-		copy(grid.dxStepsLast[d], grid.dxSteps[d])
-	}
-	for d := 0; d < grid.dim; d++ {
-		oldInterval := 0
-		newInterval := 1
-		var accumulator = 0.0
-		for {
-			accumulator += grid.deltaWeights[d]
-			for accumulator > grid.smoothedWeights[grid.dim][oldInterval] {
-				accumulator -= grid.smoothedWeights[grid.dim][oldInterval]
-				oldInterval++
-			}
-			grid.xEdges[d][newInterval] = grid.xEdgesLast[d][oldInterval] + accumulator/grid.smoothedWeights[d][oldInterval]*grid.dxStepsLast[d][oldInterval]
-			grid.dxSteps[d][newInterval-1] = grid.xEdges[d][newInterval] - grid.xEdges[d][newInterval-1]
-			newInterval++
-			if newInterval >= grid.intervals {
-				break
-			}
-		}
-		grid.dxSteps[d][grid.intervals-1] = grid.xEdges[d][grid.intervals] - grid.xEdges[d][grid.intervals-1]
-	}
-	grid.resetWeights()
+func (g *Grid) UpdateMap() {
+	g.smoothWeights()
+	g.updateMapFromSmoothed()
+	g.resetWeights()
 }
 
 func (grid *Grid) AccumulateWeights(integrand float64) {
@@ -137,7 +115,7 @@ func (grid *Grid) GetJacobian() float64 {
 	jacobian := 1.0
 	for d := 0; d < grid.dim; d++ {
 		id := grid.intervalIds[d]
-		jacobian *= grid.xEdges[d][id]
+		jacobian *= float64(grid.intervals) * grid.dxSteps[d][id]
 	}
 	return jacobian
 }
@@ -151,6 +129,41 @@ func (grid *Grid) GetX(randomNumbers []float64) []float64 {
 		x[d] = grid.xEdges[d][id] + grid.dxSteps[d][id]*offset[d]
 	}
 	return x
+}
+
+// updateMapFromSmoothed assumes smoothedWeights and deltaWeights are ready.
+func (g *Grid) updateMapFromSmoothed() {
+	for d := 0; d < g.dim; d++ {
+		copy(g.xEdgesLast[d], g.xEdges[d])
+		copy(g.dxStepsLast[d], g.dxSteps[d])
+	}
+
+	for d := 0; d < g.dim; d++ {
+		oldInterval := 0
+		newInterval := 1
+		accu := 0.0
+
+		for {
+			accu += g.deltaWeights[d]
+			for accu > g.smoothedWeights[d][oldInterval] { // <-- d (not dim)
+				accu -= g.smoothedWeights[d][oldInterval]
+				oldInterval++
+			}
+			g.xEdges[d][newInterval] =
+				g.xEdgesLast[d][oldInterval] +
+					(accu/g.smoothedWeights[d][oldInterval])*g.dxStepsLast[d][oldInterval]
+
+			g.dxSteps[d][newInterval-1] =
+				g.xEdges[d][newInterval] - g.xEdges[d][newInterval-1]
+
+			newInterval++
+			if newInterval >= g.intervals {
+				break
+			}
+		}
+
+		g.dxSteps[d][g.intervals-1] = g.xEdges[d][g.intervals] - g.xEdges[d][g.intervals-1]
+	}
 }
 
 func (grid *Grid) resetWeights() {
