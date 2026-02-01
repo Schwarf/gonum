@@ -1,5 +1,7 @@
 package vegas
 
+import "math"
+
 type Grid struct {
 	dim       int
 	intervals int
@@ -92,4 +94,147 @@ func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 	}
 
 	return m
+}
+
+func (grid *Grid) UpdateMap() {
+	grid.smoothWeights()
+	for d := 0; d < grid.dim; d++ {
+		copy(grid.xEdgesLast[d], grid.xEdges[d])
+		copy(grid.dxStepsLast[d], grid.dxSteps[d])
+	}
+	for d := 0; d < grid.dim; d++ {
+		oldInterval := 0
+		newInterval := 1
+		var accumulator = 0.0
+		for {
+			accumulator += grid.deltaWeights[d]
+			for accumulator > grid.smoothedWeights[grid.dim][oldInterval] {
+				accumulator -= grid.smoothedWeights[grid.dim][oldInterval]
+				oldInterval++
+			}
+			grid.xEdges[d][newInterval] = grid.xEdgesLast[d][oldInterval] + accumulator/grid.smoothedWeights[d][oldInterval]*grid.dxStepsLast[d][oldInterval]
+			grid.dxSteps[d][newInterval-1] = grid.xEdges[d][newInterval] - grid.xEdges[d][newInterval-1]
+			newInterval++
+			if newInterval >= grid.intervals {
+				break
+			}
+		}
+		grid.dxSteps[d][grid.intervals-1] = grid.xEdges[d][grid.intervals] - grid.xEdges[d][grid.intervals-1]
+	}
+	grid.resetWeights()
+}
+
+func (grid *Grid) AccumulateWeights(integrand float64) {
+	jacobian := grid.GetJacobian()
+	for d := 0; d < grid.dim; d++ {
+		id := grid.intervalIds[d]
+		grid.weights[d][id] += (integrand * jacobian) * (integrand * jacobian)
+		grid.counts[d][id] += 1
+	}
+}
+
+func (grid *Grid) GetJacobian() float64 {
+	jacobian := 1.0
+	for d := 0; d < grid.dim; d++ {
+		id := grid.intervalIds[d]
+		jacobian *= grid.xEdges[d][id]
+	}
+	return jacobian
+}
+
+func (grid *Grid) GetX(randomNumbers []float64) []float64 {
+	grid.computeIntervalID(randomNumbers)
+	offset := grid.getIntervalOffset(randomNumbers)
+	x := make([]float64, grid.dim)
+	for d := 0; d < grid.dim; d++ {
+		id := grid.intervalIds[d]
+		x[d] = grid.xEdges[d][id] + grid.dxSteps[d][id]*offset[d]
+	}
+	return x
+}
+
+func (grid *Grid) resetWeights() {
+	for i := range grid.weights {
+		clear(grid.weights[i])
+	}
+	for i := range grid.counts {
+		clear(grid.counts[i])
+	}
+}
+
+func (grid *Grid) smoothWeights() {
+	// weights[d][i] /= counts[d][i] if count != 0
+	for d := 0; d < grid.dim; d++ {
+		for i := 0; i < grid.intervals; i++ {
+			if grid.counts[d][i] != 0 {
+				grid.weights[d][i] /= grid.counts[d][i]
+			}
+		}
+	}
+
+	for d := 0; d < grid.dim; d++ {
+		// dSum = sum(weights[d][:])
+		dSum := 0.0
+		for i := 0; i < grid.intervals; i++ {
+			dSum += grid.weights[d][i]
+		}
+
+		grid.summedWeights[d] = 0.0
+
+		// Helper: transform dTmp the same way as C++
+		transform := func(dTmp float64) float64 {
+			if dTmp != 0.0 {
+				// NOTE: This matches the C++ exactly.
+				// If dTmp <= 0 or dTmp == 1, the expression may produce NaN/Inf.
+				dTmp = math.Pow((dTmp-1.0)/math.Log(dTmp), grid.alpha)
+			}
+			return dTmp
+		}
+
+		// First interval i == 0
+		dTmp := 0.0
+		if grid.intervals >= 2 && dSum != 0.0 {
+			dTmp = (7.0*grid.weights[d][0] + grid.weights[d][1]) / (8.0 * dSum)
+		}
+		dTmp = transform(dTmp)
+		grid.smoothedWeights[d][0] = dTmp
+		grid.summedWeights[d] += dTmp
+
+		// Main loop: 1 <= i < nIntervals-1
+		for i := 1; i < grid.intervals-1; i++ {
+			dTmp = 0.0
+			if dSum != 0.0 {
+				dTmp = (grid.weights[d][i-1] + 6.0*grid.weights[d][i] + grid.weights[d][i+1]) / (8.0 * dSum)
+			}
+			dTmp = transform(dTmp)
+			grid.smoothedWeights[d][i] = dTmp
+			grid.summedWeights[d] += dTmp
+		}
+
+		// Last interval i == nIntervals-1
+		last := grid.intervals - 1
+		dTmp = 0.0
+		if grid.intervals >= 2 && dSum != 0.0 {
+			dTmp = (grid.weights[d][last-1] + 7.0*grid.weights[d][last]) / (8.0 * dSum)
+		}
+		dTmp = transform(dTmp)
+		grid.smoothedWeights[d][last] = dTmp
+		grid.summedWeights[d] += dTmp
+
+		grid.deltaWeights[d] = grid.summedWeights[d] / float64(grid.intervals)
+	}
+}
+
+func (grid *Grid) computeIntervalID(randomNumbers []float64) {
+	for d := 0; d < grid.dim; d++ {
+		grid.intervalIds[d] = int(randomNumbers[d] * float64(grid.intervals))
+	}
+}
+
+func (grid *Grid) getIntervalOffset(randomNumbers []float64) []float64 {
+	result := make([]float64, grid.dim)
+	for d := 0; d < grid.dim; d++ {
+		result[d] = randomNumbers[d]*float64(grid.intervals) - float64(grid.intervalIds[d])
+	}
+	return result
 }
