@@ -23,10 +23,10 @@ func TestNewGridUniform(t *testing.T) {
 		}
 		sum := 0.0
 		for i := 0; i < g.intervals; i++ {
-			if !almostEqual(g.dxSteps[d][i], step, 1e-15) {
-				t.Fatalf("dim %d: dxSteps[%d]=%v want %v", d, i, g.dxSteps[d][i], step)
+			if !almostEqual(g.dxBins[d][i], step, 1e-15) {
+				t.Fatalf("dim %d: dxBins[%d]=%v want %v", d, i, g.dxBins[d][i], step)
 			}
-			sum += g.dxSteps[d][i]
+			sum += g.dxBins[d][i]
 			if g.xEdges[d][i+1] < g.xEdges[d][i] {
 				t.Fatalf("dim %d: edges not monotonic at %d", d, i)
 			}

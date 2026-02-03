@@ -2,6 +2,25 @@ package vegas
 
 import "math"
 
+// Grid implements the adaptive 1D-per-dimension mapping used by the VEGAS
+// Monte Carlo integration algorithm.
+//
+// VEGAS samples points in the unit hypercube [0,1)^dim, but not uniformly.
+// Instead, each dimension is partitioned into `intervals` bins whose widths
+// are adapted over iterations to concentrate samples in regions that
+// contribute most to the integral (importance sampling).
+//
+// The mapping is represented by per-dimension edge positions xEdges[d]
+// (length intervals+1) and the corresponding bin widths dxBins[d]
+// (length intervals). During sampling, GetX maps uniform random numbers
+// to physical coordinates, and GetJacobian returns the Jacobian determinant
+// of that mapping for the current sample.
+//
+// AccumulateWeights collects per-bin statistics (proportional to f(x)^2)
+// used to update the map via UpdateMap.
+//
+// Note: Grid maintains internal state (intervalIds) for the last GetX call;
+// it is not safe for concurrent use without external synchronization.
 type Grid struct {
 	dim       int
 	intervals int
@@ -12,9 +31,9 @@ type Grid struct {
 	xEdges     [][]float64
 	xEdgesLast [][]float64
 
-	// steps: [dim][intervals]
-	dxSteps     [][]float64
-	dxStepsLast [][]float64
+	// bins: [dim][intervals]
+	dxBins     [][]float64
+	dxBinsLast [][]float64
 
 	// accumulators: [dim][intervals]
 	weights         [][]float64
@@ -30,10 +49,28 @@ type Grid struct {
 	intervalIds []int
 }
 
+// NewGrid constructs a VEGAS grid with the given dimension and number of
+// intervals per dimension, using a default smoothing parameter alpha=0.5.
+//
+// Panics if dim <= 0 or intervals <= 1.
 func NewGrid(dim, intervals int) *Grid {
 	return NewGridWithAlpha(dim, intervals, 0.5)
 }
 
+// NewGridWithAlpha constructs a VEGAS grid with explicit smoothing parameter
+// alpha in (0,1].
+//
+// The grid is initialized to the identity mapping: each dimension is split
+// uniformly into `intervals` bins, so GetX initially returns the input random
+// numbers (up to floating-point roundoff), and GetJacobian is 1.
+//
+// The alpha parameter controls how aggressively the grid adapts when
+// updating the map (larger alpha generally adapts more strongly).
+//
+// Panics if:
+//   - dim <= 0
+//   - intervals <= 1
+//   - alpha <= 0 or alpha > 1
 func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 
 	if dim <= 0 {
@@ -53,8 +90,8 @@ func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 		alpha:           alpha,
 		xEdges:          make([][]float64, dim),
 		xEdgesLast:      make([][]float64, dim),
-		dxSteps:         make([][]float64, dim),
-		dxStepsLast:     make([][]float64, dim),
+		dxBins:          make([][]float64, dim),
+		dxBinsLast:      make([][]float64, dim),
 		weights:         make([][]float64, dim),
 		counts:          make([][]float64, dim),
 		smoothedWeights: make([][]float64, dim),
@@ -67,8 +104,8 @@ func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 	for d := 0; d < dim; d++ {
 		m.xEdges[d] = make([]float64, intervals+1)
 		m.xEdgesLast[d] = make([]float64, intervals+1)
-		m.dxSteps[d] = make([]float64, intervals)
-		m.dxStepsLast[d] = make([]float64, intervals)
+		m.dxBins[d] = make([]float64, intervals)
+		m.dxBinsLast[d] = make([]float64, intervals)
 
 		m.weights[d] = make([]float64, intervals)
 		m.counts[d] = make([]float64, intervals)
@@ -89,19 +126,52 @@ func NewGridWithAlpha(dim, intervals int, alpha float64) *Grid {
 	for d := 0; d < dim; d++ {
 		copy(m.xEdges[d], xEdgesTmp)
 		copy(m.xEdgesLast[d], xEdgesTmp)
-		copy(m.dxSteps[d], dxStepsTmp)
-		copy(m.dxStepsLast[d], dxStepsTmp)
+		copy(m.dxBins[d], dxStepsTmp)
+		copy(m.dxBinsLast[d], dxStepsTmp)
 	}
 
 	return m
 }
 
-func (g *Grid) UpdateMap() {
-	g.smoothWeights()
-	g.updateMapFromSmoothed()
-	g.resetWeights()
+// UpdateMap updates the sampling map using the weights accumulated since the
+// last update.
+//
+// Typical VEGAS iteration pattern:
+//
+//  1. For each sample: r := U([0,1)^dim)
+//     x := g.GetX(r)
+//     w := g.GetJacobian()
+//     evaluate f(x), then call g.AccumulateWeights(f(x)).
+//  2. After many samples: call g.UpdateMap() to adapt the grid.
+//  3. Repeat for the next iteration.
+//
+// Internally this smooths the per-bin weights, recomputes the per-dimension
+// bin edges/widths to equalize the smoothed weight mass across bins, and
+// resets the accumulators for the next iteration.
+func (grid *Grid) UpdateMap() {
+	grid.smoothWeights()
+	grid.updateMapFromSmoothed()
+	grid.resetWeights()
 }
 
+// AccumulateWeights records the contribution of the current sample for
+// subsequent map adaptation.
+//
+// integrand is the function value f(x) at the point returned by the most
+// recent GetX call (i.e. for the same random numbers), and the accumulation
+// is performed per dimension and per interval.
+//
+// VEGAS adapts the grid based on a measure proportional to f(x)^2; this
+// implementation accumulates (f(x)*J)^2 into the active bin of each
+// dimension, where J is the mapping Jacobian for the current sample.
+//
+// Call sequence requirement:
+//   - compute x via GetX(randomNumbers)
+//   - evaluate integrand := f(x)
+//   - call AccumulateWeights(integrand)
+//
+// If AccumulateWeights is called without a preceding GetX (or with a different
+// sample than GetX), the internal interval selection may be inconsistent.
 func (grid *Grid) AccumulateWeights(integrand float64) {
 	jacobian := grid.GetJacobian()
 	for d := 0; d < grid.dim; d++ {
@@ -111,58 +181,81 @@ func (grid *Grid) AccumulateWeights(integrand float64) {
 	}
 }
 
+// GetJacobian returns the Jacobian determinant of the current mapping for the
+// last sample produced by GetX.
+//
+// The mapping is piecewise linear per dimension; within a bin i of dimension d,
+// x = xEdges[d][i] + dxSteps[d][i]*offset, with offset in [0,1).
+// The Jacobian factor contributed by that dimension is intervals*dxSteps[d][i],
+// and the full Jacobian is the product over dimensions.
+//
+// Call sequence requirement:
+//   - Call GetX(randomNumbers) first to set the active interval per dimension.
+//   - Then call GetJacobian() for that same sample.
 func (grid *Grid) GetJacobian() float64 {
 	jacobian := 1.0
 	for d := 0; d < grid.dim; d++ {
 		id := grid.intervalIds[d]
-		jacobian *= float64(grid.intervals) * grid.dxSteps[d][id]
+		jacobian *= float64(grid.intervals) * grid.dxBins[d][id]
 	}
 	return jacobian
 }
 
+// GetX maps a vector of uniform random numbers in [0,1) to a sample point in
+// [0,1)^dim according to the current VEGAS grid.
+//
+// randomNumbers must have length at least dim, and each component should be
+// in the half-open interval [0,1). Values outside that range will lead to
+// out-of-range interval indices and may panic.
+//
+// The returned slice has length dim and is newly allocated.
+//
+// Side effect:
+// GetX stores the selected interval index per dimension internally (intervalIds);
+// subsequent calls to GetJacobian and AccumulateWeights use that state.
 func (grid *Grid) GetX(randomNumbers []float64) []float64 {
 	grid.computeIntervalID(randomNumbers)
 	offset := grid.getIntervalOffset(randomNumbers)
 	x := make([]float64, grid.dim)
 	for d := 0; d < grid.dim; d++ {
 		id := grid.intervalIds[d]
-		x[d] = grid.xEdges[d][id] + grid.dxSteps[d][id]*offset[d]
+		x[d] = grid.xEdges[d][id] + grid.dxBins[d][id]*offset[d]
 	}
 	return x
 }
 
 // updateMapFromSmoothed assumes smoothedWeights and deltaWeights are ready.
-func (g *Grid) updateMapFromSmoothed() {
-	for d := 0; d < g.dim; d++ {
-		copy(g.xEdgesLast[d], g.xEdges[d])
-		copy(g.dxStepsLast[d], g.dxSteps[d])
+func (grid *Grid) updateMapFromSmoothed() {
+	for d := 0; d < grid.dim; d++ {
+		copy(grid.xEdgesLast[d], grid.xEdges[d])
+		copy(grid.dxBinsLast[d], grid.dxBins[d])
 	}
 
-	for d := 0; d < g.dim; d++ {
+	for d := 0; d < grid.dim; d++ {
 		oldInterval := 0
 		newInterval := 1
 		accu := 0.0
 
 		for {
-			accu += g.deltaWeights[d]
-			for accu > g.smoothedWeights[d][oldInterval] { // <-- d (not dim)
-				accu -= g.smoothedWeights[d][oldInterval]
+			accu += grid.deltaWeights[d]
+			for accu > grid.smoothedWeights[d][oldInterval] { // <-- d (not dim)
+				accu -= grid.smoothedWeights[d][oldInterval]
 				oldInterval++
 			}
-			g.xEdges[d][newInterval] =
-				g.xEdgesLast[d][oldInterval] +
-					(accu/g.smoothedWeights[d][oldInterval])*g.dxStepsLast[d][oldInterval]
+			grid.xEdges[d][newInterval] =
+				grid.xEdgesLast[d][oldInterval] +
+					(accu/grid.smoothedWeights[d][oldInterval])*grid.dxBinsLast[d][oldInterval]
 
-			g.dxSteps[d][newInterval-1] =
-				g.xEdges[d][newInterval] - g.xEdges[d][newInterval-1]
+			grid.dxBins[d][newInterval-1] =
+				grid.xEdges[d][newInterval] - grid.xEdges[d][newInterval-1]
 
 			newInterval++
-			if newInterval >= g.intervals {
+			if newInterval >= grid.intervals {
 				break
 			}
 		}
 
-		g.dxSteps[d][g.intervals-1] = g.xEdges[d][g.intervals] - g.xEdges[d][g.intervals-1]
+		grid.dxBins[d][grid.intervals-1] = grid.xEdges[d][grid.intervals] - grid.xEdges[d][grid.intervals-1]
 	}
 }
 
