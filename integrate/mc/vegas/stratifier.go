@@ -79,3 +79,53 @@ func NewStratifierWithParams(dim, strats, maxHypercubes int, beta float64) *Stra
 func (stratifier *Stratifier) SetExpectedEvaluations(expectedEvaluations int) {
 	stratifier.expectedEvaluations = expectedEvaluations
 }
+
+func (stratifier *Stratifier) getIndices(index int) []int {
+	indices := make([]int, stratifier.dim)
+	for i := 0; i < stratifier.dim; i++ {
+		quotient := index / stratifier.strats
+		remainder := index - quotient*stratifier.strats
+		indices[i] = remainder
+		index = quotient
+	}
+	return indices
+}
+
+func (stratifier *Stratifier) getY(index int, randomNumbers []float64) []float64 {
+	deltaY := 1.0 / float64(stratifier.strats)
+	result := make([]float64, stratifier.dim)
+	indices := stratifier.getIndices(index)
+	for i := 0; i < stratifier.dim; i++ {
+		result[i] = (randomNumbers[i] + float64(indices[i])) * deltaY
+	}
+	return result
+}
+
+func (stratifier *Stratifier) accumulateWeights(cubeIndex int, value float64) {
+	stratifier.accumulatedFunctionValues[cubeIndex] += value
+	stratifier.squaredAccumulatedFunctionValues[cubeIndex] += value * value
+	stratifier.counts[cubeIndex] += 1
+}
+
+func (stratifier *Stratifier) updateHypercubeWeights() {
+	cubeVarianceEstimate := 0.0
+	var weightSum float64
+	for i := 0; i < stratifier.hypercubes; i++ {
+		weightSum = stratifier.cubicVolume*stratifier.cubicVolume/stratifier.counts[i]*stratifier.squaredAccumulatedFunctionValues[i] -
+			(stratifier.cubicVolume/stratifier.counts[i]*stratifier.accumulatedFunctionValues[i])*(stratifier.cubicVolume/stratifier.counts[i]*stratifier.accumulatedFunctionValues[i])
+		stratifier.hypercubeWeights[i] = math.Pow(weightSum, stratifier.beta)
+		cubeVarianceEstimate += stratifier.hypercubeWeights[i]
+	}
+	for i := 0; i < stratifier.hypercubes; i++ {
+		stratifier.hypercubeWeights[i] = stratifier.hypercubeWeights[i] / cubeVarianceEstimate
+	}
+}
+
+func (stratifier *Stratifier) expectedEventsPerHypercube(index int) int {
+	expectation := stratifier.expectedEvaluations * int(stratifier.hypercubeWeights[index])
+	if expectation < 2 {
+		return 2
+	} else {
+		return expectation
+	}
+}
